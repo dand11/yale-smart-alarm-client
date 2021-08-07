@@ -2,10 +2,9 @@
 import logging
 from typing import Any, Dict, Literal, Optional, Tuple, Union, cast
 
-import backoff
 import requests
 
-from .exceptions import AuthenticationError
+from .exceptions import AuthenticationError, ConnectError, HTTPError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,50 +22,19 @@ class YaleAuth:
     _YALE_AUTHENTICATION_REFRESH_TOKEN = "refresh_token"
     _YALE_AUTHENTICATION_ACCESS_TOKEN = "access_token"
 
-    _DEFAULT_REQUEST_TIMEOUT = 5
-    _MAX_RETRY_SECONDS = 30
-    _MAX_TRIES = 5
-
-    @staticmethod
-    def _give_up(e: requests.exceptions.RequestException) -> bool:
-        """Give up on connecting."""
-        try:
-            status = e.response.status_code
-            # if e.response.status_code == 401:
-            #    raise AuthenticationError
-        except requests.RequestException:
-            return False
-        raise AuthenticationError
-
-    BACKOFF_RETRY_ON_EXCEPTION_PARAMS = {
-        "wait_gen": backoff.expo,
-        "exception": requests.exceptions.RequestException,
-        "max_tries": _MAX_TRIES,
-        "max_time": _MAX_RETRY_SECONDS,
-        "giveup": _give_up,
-    }
-
     def __init__(self, username: str, password: str) -> None:
         """Initialize Authentication module."""
         self.username = username
         self.password = password
         self.refresh_token: Optional[str] = None
         self.access_token: Optional[str] = None
-        try:
-            self._authorize()
-        except AuthenticationError as e:
-            _LOGGER.error("Authentication incorrect")
-            raise e
-        except requests.RequestException as e:
-            _LOGGER.error("Problem connecting to API")
-            raise e
+        self._authorize()
 
     @property
     def auth_headers(self) -> Dict[str, str]:
         """Return authentication headers."""
         return {"Authorization": "Bearer " + self.access_token}
 
-    @backoff.on_exception(**BACKOFF_RETRY_ON_EXCEPTION_PARAMS)
     def get_authenticated(self, endpoint: str) -> Dict[str, Any]:
         """Execute an GET request on an endpoint.
 
@@ -90,7 +58,6 @@ class YaleAuth:
 
         return cast(Dict[str, Any], response.json())
 
-    @backoff.on_exception(**BACKOFF_RETRY_ON_EXCEPTION_PARAMS)
     def post_authenticated(
         self, endpoint: str, params: Optional[Dict[Any, Any]] = None
     ) -> Union[Literal[True], Dict[str, Any]]:
@@ -142,7 +109,6 @@ class YaleAuth:
         else:
             _LOGGER.debug("Unable to fetch services")
 
-    @backoff.on_exception(**BACKOFF_RETRY_ON_EXCEPTION_PARAMS)
     def _authorize(self) -> Tuple[str, str]:
         if self.refresh_token:
             payload = {

@@ -18,7 +18,7 @@ class HTTPError(Exception):
         """Initialize the exception."""
         Exception.__init__(self, *args)
 
-class ConnectionError(Exception):
+class ConnectError(Exception):
     """Exception to indicate an issue with the general connection."""
 
     def __init__(self, *args: Any) -> None:
